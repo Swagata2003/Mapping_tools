@@ -19,7 +19,7 @@ def get_pids_from_title(json_file, title):
 
     return matching_pids
 
-def extract_node2_from_link_file(link_file_path, pid):
+def extract_citednodes_from_link_file(link_file_path, pid):# from where seed paper cited
     with open(link_file_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
@@ -31,6 +31,20 @@ def extract_node2_from_link_file(link_file_path, pid):
             node2_list.append(node2)
 
     return node2_list
+
+def extract_citingnodes_from_link_file(link_file_path, pid):# paper who cited seed paper
+    with open(link_file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+
+    node2_list = []
+
+    for line in lines:
+        node1, node2 = line.strip().split()
+        if node2 == pid:
+            node2_list.append(node1)
+
+    return node2_list
+
 
 def get_date_for_pid(json_file, pid):
     with open(json_file, 'r', encoding='utf-8') as file:
@@ -48,44 +62,53 @@ def get_date_for_pid(json_file, pid):
             return date
 
     return None
-def create_graph(mainpid, nodes_and_dates, jsontitle_file):
-    G = nx.Graph()
+import random
+
+def create_graph(mainpid, nodesanddates1, nodesanddates2, jsontitle_file):
+    G = nx.DiGraph()  # Use DiGraph to create a directed graph
 
     # Add mainpid as a node
-    G.add_node(mainpid, date=get_date_for_pid(jsontitle_file, mainpid))
+    main_date = get_date_for_pid(jsontitle_file, mainpid)
+    G.add_node(mainpid, date=main_date)
 
-    # Add other nodes with their dates
-    for pid, date in nodes_and_dates:
-        G.add_node(pid, date=date)
+    # Sort nodesanddates1 and nodesanddates2 by date in ascending order
+    sorted_nodes1 = sorted(nodesanddates1, key=lambda x: x[1])
+    sorted_nodes2 = sorted(nodesanddates2, key=lambda x: x[1])
 
-    # Sort nodes by date in ascending order
-    sorted_nodes = sorted(G.nodes(data=True), key=lambda x: x[1].get('date', ''))
-    sorted_nodes = [node[0] for node in sorted_nodes]
+    # Calculate the number of nodes in nodesanddates1 and nodesanddates2
+    num_nodes1 = len(sorted_nodes1)
+    num_nodes2 = len(sorted_nodes2)
 
-    # Print sorted nodes and associated dates
-    print("Sorted nodes:")
-    print(sorted_nodes)
-    print("Node dates:")
-    for node in sorted_nodes:
-        print(f"{node}: {G.nodes[node]['date']}")
+    # Determine the y-values for nodesanddates1 and nodesanddates2
+    max_y1 = num_nodes2  # Maximum y-value for nodesanddates1
+    min_y2 = -num_nodes1  # Minimum y-value for nodesanddates2
 
-    # Create a shell layout for mainpid and circular layout for other nodes
-    shell_positions = nx.shell_layout(G, nlist=[[mainpid], [node for node in sorted_nodes if node != mainpid]])
-    circular_positions = nx.circular_layout(G)
+    # Create positions for nodesanddates1 above mainpid
+    node_positions = {}
+    for idx, (node, _) in enumerate(sorted_nodes1, start=1):
+        # Set x value to a random number between -1 and 1
+        x_value = random.uniform(-1, 1)
+        node_positions[node] = (x_value, max_y1 + idx)
 
-    # Print the layout positions
-    print("Shell positions:")
-    print(shell_positions)
-    print("Circular positions:")
-    print(circular_positions)
+    # Position mainpid
+    # Set x value to 0 for mainpid
+    node_positions[mainpid] = (0, 0)
 
-    # Combine x and y coordinates for each node
-    node_positions = {node: (shell_positions[node][0], circular_positions[node][1]) for node in sorted_nodes}
+    # Create positions for nodesanddates2 below mainpid
+    for idx, (node, _) in enumerate(sorted_nodes2, start=1):
+        # Set x value to a random number between -1 and 1
+        x_value = random.uniform(-1, 1)
+        node_positions[node] = (x_value, min_y2 - idx)
 
     # Add edges between mainpid and each node
-    G.add_edges_from([(mainpid, node) for node in sorted_nodes if node!=mainpid])
+    G.add_edges_from([(mainpid, node) for node, _ in sorted_nodes1 ], arrowstyle='->')
+
+    G.add_edges_from([( node,mainpid) for node, _ in sorted_nodes2], arrowstyle='->')
 
     return G, node_positions
+
+
+
 
 
 # app = dash.Dash(__name__)
@@ -114,27 +137,39 @@ else:
 jsonindex_file = 'pid_index.json'
 link_file_path = "cit-HepTh.txt/Cit-HepTh.txt"
 
-node2_list = extract_node2_from_link_file(link_file_path, pid)
-print(node2_list)
+prev_node_list = extract_citednodes_from_link_file(link_file_path, pid)
+print(prev_node_list)
+
+nxt_node_list =extract_citingnodes_from_link_file(link_file_path,pid)
+print(nxt_node_list)
 
 time_file_path = './cit-HepTh-dates.txt/Cit-HepTh-dates.txt'
 
-nodesanddates = []
-
-for node2_pid in node2_list:
+nodesanddates1 = []
+nodesanddates2=[]
+for node2_pid in prev_node_list:
     date = get_date_for_pid(jsontitle_file, node2_pid)
     if date is None or date == "":
         date = "2024-02-01"
     
-    nodesanddates.append((node2_pid, date))
-print(nodesanddates)
+    nodesanddates1.append((node2_pid, date))
+for node2_pid in nxt_node_list:
+    date = get_date_for_pid(jsontitle_file, node2_pid)
+    if date is None or date == "":
+        date = "2024-02-01"
+    
+    nodesanddates2.append((node2_pid, date))
+print(nodesanddates1," ",nodesanddates2)
 mainpid = pid
 # nodesanddates.append((mainpid, get_date_for_pid(jsontitle_file, mainpid)))
-nodesanddates = sorted(nodesanddates, key=lambda x: x[1])
+nodesanddates1 = sorted(nodesanddates1, key=lambda x: x[1])
+
+nodesanddates2 = sorted(nodesanddates2, key=lambda x: x[1])
+
 # print(nodesanddates)
 
 # Create a networkx graph
-graph, node_positions = create_graph(mainpid, nodesanddates,jsontitle_file)
+graph, node_positions = create_graph(mainpid, nodesanddates1,nodesanddates2,jsontitle_file)
 
 # Draw the graph with manual positions
 nx.draw(graph, pos=node_positions, with_labels=True, font_weight='bold', node_size=1000, node_color='skyblue', font_size=8)
